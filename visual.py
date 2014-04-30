@@ -8,8 +8,7 @@ from curses import wrapper
 
 # edit to match your sink
 SINK_NAME = 'alsa_output.usb-FiiO_FiiO_USB_DAC-E07K-01-DACE07K.analog-stereo'
-METER_RATE = 344
-SAMPLES_FOR_FFT = 60
+SAMPLE_RATE = 44100
 
 
 class AudioInterface(object):
@@ -101,6 +100,8 @@ class AudioInterface(object):
 
 MAX_FREQUENCY = 1200
 STEP_FREQUENCY = MAX_FREQUENCY / 255*2
+GATHER_SIZE = 735
+
 
 def convert_color(array):
     it = np.nditer([array, None],
@@ -112,34 +113,48 @@ def convert_color(array):
         y[...] =  x / STEP_FREQUENCY
     return it.operands[1]
 
+def gather(array):
+    length = len(array)
+    reshaped = np.reshape(array, (length/GATHER_SIZE, GATHER_SIZE)) 
+    average = np.average(reshaped, axis=1)
+    return average
+
+
 def main(stdscr):
-    monitor = AudioInterface(SINK_NAME, METER_RATE)
+    monitor = AudioInterface(SINK_NAME, SAMPLE_RATE)
     print "done setup"
   
     while True:
-        array = np.fromiter(monitor, np.int64, SAMPLES_FOR_FFT)
+        array = np.fromiter(monitor, np.int64, SAMPLE_RATE)
         ffted = np.fft.fft(array)
         fftabs = np.absolute(ffted) # i guess this ranges from 0 to 1000
-        colored = convert_color(fftabs)
-        
+        average = gather(fftabs)
+        colored = convert_color(average)
+
 
         if not stdscr:
-            print(colored[:2])
+            print(len(average))
+            print(average)
         else:
-            for i,x in enumerate(fftabs[30:36]):
+            for i,x in enumerate(average[:30]):
                 string = "%3.0f" % x
-                stdscr.addstr(0,i*5,string)
+                stdscr.addstr(0,i*6,string)
+            for i,x in enumerate(average[30:60]):
+                string = "%3.0f" % x
+                stdscr.addstr(2,i*6,string)
+
             stdscr.refresh()
 
-        #stdscr.addch(50,30,"b")
     
-        #print(fftabs)
-        #print(len(fftabs))
-
 if __name__ == '__main__':
-    wrapper(main)
-#    main(None)
+    # just for debugging
+    if len(sys.argv)==1:
+        wrapper(main)
+    else:
+        main(None)
 
 #problem:
 # i think i just sample to small window and don't get high frequency, perhaps take larger window and combine (mean) adjacent entries?
 # there is probably theory how much i need to get all frequencies
+# the high frequencies are still very noise which is to be expected
+# the low frequencies are also noisy which seems weird
