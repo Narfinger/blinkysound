@@ -5,10 +5,21 @@ from ctypes import POINTER, c_ubyte, c_void_p, c_ulong, cast
 from pulseaudio.lib_pulseaudio import *
 import curses
 from curses import wrapper
+import serial
 
 # edit to match your sink
-SINK_NAME = 'alsa_output.usb-FiiO_FiiO_USB_DAC-E07K-01-DACE07K.analog-stereo'
-SAMPLE_RATE = 44100
+SINK_NAME = 'alsa_output.pci-0000_05_04.0.analog-stereo'
+SERIAL_PORT = '/dev/ttyACM0'
+LED_NUMBER = 62                       #for some reason the first seems really out of wack after fft
+
+# the frames my blinkytape can do is roughly 1 frame per second
+
+MAX_VALUE = 200
+FPS = 35
+SAMPLE_RATE = 44100/FPS
+GATHER_SIZE = SAMPLE_RATE/LED_NUMBER
+ROUND_DECIMAL = 2
+STEP_FREQUENCY = 200.0/254
 
 
 class AudioInterface(object):
@@ -57,6 +68,7 @@ class AudioInterface(object):
             print "Connection terminated"
 
     def sink_info_cb(self, context, sink_info_p, _, __):
+        "gives us information about the sinks found"
         if not sink_info_p:
             return
 
@@ -98,19 +110,17 @@ class AudioInterface(object):
         pa_stream_drop(stream)
         
 
-MAX_FREQUENCY = 1200
-STEP_FREQUENCY = MAX_FREQUENCY / 255*2
-GATHER_SIZE = 735
 
 
-def convert_color(array):
+
+def convert_steps(array):
     it = np.nditer([array, None],
                    flags = ['external_loop', 'buffered'],
                    op_flags = [['readonly'],
                                ['writeonly', 'allocate', 'no_broadcast']])
     for x,y in it:
-        # simple use 255*2 value between red and blue
-        y[...] =  x / STEP_FREQUENCY
+        # simple use 255 value between red and blue
+        y[...] =  np.round(x / STEP_FREQUENCY).astype(int)
     return it.operands[1]
 
 def gather(array):
@@ -120,26 +130,53 @@ def gather(array):
     return average
 
 
+def writeToTape(serial, array):
+    data = ""
+    for x in array:
+        towrite = [0, 0, 0]
+        value = int(x)
+        if value <= 66:
+            towrite[0] = value
+        elif value <= 133:
+            towrite[1] = value
+        else:
+            towrite[2] = value
+
+        for x in towrite:
+            data += chr(x/3)
+
+    # write control
+    serial.write(chr(0) + chr(0) + chr(255))
+    serial.write(data)
+    serial.flushInput()
+    serial.flush()
+
 def main(stdscr):
+    print("Starting")
     monitor = AudioInterface(SINK_NAME, SAMPLE_RATE)
     print "done setup"
-  
+    tape = serial.Serial(SERIAL_PORT, 115200)
+
     while True:
         array = np.fromiter(monitor, np.int64, SAMPLE_RATE)
         ffted = np.fft.fft(array)
         fftabs = np.absolute(ffted) # i guess this ranges from 0 to 1000
         average = gather(fftabs)
-        colored = convert_color(average)
+        modified_average = np.clip(np.round(average,ROUND_DECIMAL), 0, MAX_VALUE)[1:-2]
+        colored = convert_steps(modified_average)
 
+        writeToTape(tape, colored)
 
         if not stdscr:
-            print(len(average))
-            print(average)
+#            print(len(modified_average))
+#            print(modified_average)
+            print(colored)
+
         else:
-            for i,x in enumerate(average[:30]):
+            for i,x in enumerate(modified_average[:30]):
                 string = "%3.0f" % x
                 stdscr.addstr(0,i*6,string)
-            for i,x in enumerate(average[30:60]):
+            for i,x in enumerate(modified_average[30:60]):
                 string = "%3.0f" % x
                 stdscr.addstr(2,i*6,string)
 
