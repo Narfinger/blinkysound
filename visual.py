@@ -3,8 +3,6 @@ import sys
 from Queue import Queue
 from ctypes import POINTER, c_ubyte, c_void_p, c_ulong, cast
 from pulseaudio.lib_pulseaudio import *
-import curses
-from curses import wrapper
 import serial
 
 # edit to match your sink
@@ -12,14 +10,13 @@ SINK_NAME = 'alsa_output.pci-0000_05_04.0.analog-stereo'
 SERIAL_PORT = '/dev/ttyACM0'
 LED_NUMBER = 62                       #for some reason the first seems really out of wack after fft
 
-# the frames my blinkytape can do is roughly 1 frame per second
-
 MAX_VALUE = 200
-FPS = 35
-SAMPLE_RATE = 44100/FPS
-GATHER_SIZE = SAMPLE_RATE/LED_NUMBER
+FPS = 20
+SAMPLE_RATE = 44100
+SAMPLE_NUMBER = SAMPLE_RATE/FPS
+GATHER_SIZE = 35
 ROUND_DECIMAL = 2
-STEP_FREQUENCY = 200.0/254
+STEP_FREQUENCY = 600.0/254
 
 
 class AudioInterface(object):
@@ -130,20 +127,21 @@ def gather(array):
     return average
 
 
-def writeToTape(serial, array):
+def writeToTape(serial, array, maxvalue):
+    print("Writing")
     data = ""
     for x in array:
-        towrite = [0, 0, 0]
+        towrite = [0, 0, 0]               #rgb
         value = int(x)
-        if value <= 66:
-            towrite[0] = value
-        elif value <= 133:
-            towrite[1] = value
+        if value <= maxvalue/3:
+            towrite[0] = 20
+        elif value <= 2/3.0 * maxvalue:
+            towrite[1] = 100
         else:
-            towrite[2] = value
+            towrite[2] = 254
 
         for x in towrite:
-            data += chr(x/3)
+            data += chr(x/2)
 
     # write control
     serial.write(chr(0) + chr(0) + chr(255))
@@ -151,47 +149,33 @@ def writeToTape(serial, array):
     serial.flushInput()
     serial.flush()
 
-def main(stdscr):
+def main():
     print("Starting")
     monitor = AudioInterface(SINK_NAME, SAMPLE_RATE)
     print "done setup"
     tape = serial.Serial(SERIAL_PORT, 115200)
 
     while True:
-        array = np.fromiter(monitor, np.int64, SAMPLE_RATE)
+        array = np.fromiter(monitor, np.int64, SAMPLE_NUMBER)
         ffted = np.fft.fft(array)
-        fftabs = np.absolute(ffted) # i guess this ranges from 0 to 1000
+        
+        fftabs = np.absolute(np.log(ffted)) # i guess this ranges from 0 to 1000
         average = gather(fftabs)
-        modified_average = np.clip(np.round(average,ROUND_DECIMAL), 0, MAX_VALUE)[1:-2]
+        maxvalue = np.max(average[1:-2])
+#        modified_average = np.clip(np.round(average,ROUND_DECIMAL), 0, MAX_VALUE)[1:-2]
+        modified_average = np.clip(np.round(average,ROUND_DECIMAL), 0, 20000)[1:-2]
+        print(len(modified_average))
+
         colored = convert_steps(modified_average)
 
-        writeToTape(tape, colored)
+        print(average)
+        writeToTape(tape, colored, 4)
 
-        if not stdscr:
-#            print(len(modified_average))
-#            print(modified_average)
-            print(colored)
-
-        else:
-            for i,x in enumerate(modified_average[:30]):
-                string = "%3.0f" % x
-                stdscr.addstr(0,i*6,string)
-            for i,x in enumerate(modified_average[30:60]):
-                string = "%3.0f" % x
-                stdscr.addstr(2,i*6,string)
-
-            stdscr.refresh()
 
     
 if __name__ == '__main__':
-    # just for debugging
-    if len(sys.argv)==1:
-        wrapper(main)
-    else:
-        main(None)
+    main()
 
 #problem:
-# i think i just sample to small window and don't get high frequency, perhaps take larger window and combine (mean) adjacent entries?
-# there is probably theory how much i need to get all frequencies
-# the high frequencies are still very noise which is to be expected
-# the low frequencies are also noisy which seems weird
+#frequencies still seem kind of weird
+#i get both channels mirrored?
