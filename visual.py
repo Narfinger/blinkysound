@@ -93,7 +93,7 @@ class AudioInterface(object):
             pa_stream_connect_record(pa_stream,
                                      sink_info.monitor_source_name,
                                      None,
-                                     PA_STREAM_PEAK_DETECT)
+                                     0)
 
     def stream_read_cb(self, stream, length, index_incr):
         data = c_void_p()
@@ -170,11 +170,12 @@ def main():
 
         print(average)
         writeToTape(tape, colored, 4)
-
-
+  
     
 if __name__ == '__main__':
     main()
+
+
 
 #problem:
 #frequencies still seem kind of weird
