@@ -4,13 +4,14 @@ from Queue import Queue
 from ctypes import POINTER, c_ubyte, c_void_p, c_ulong, cast
 from pulseaudio.lib_pulseaudio import *
 import serial
+import signal
 
 # edit to match your sink
 SINK_NAME = 'alsa_output.pci-0000_05_04.0.analog-stereo'
 SERIAL_PORT = '/dev/ttyACM0'
-LED_NUMBER = 62                       #for some reason the first seems really out of wack after fft
+LED_NUMBER = 60
 
-MAX_VALUE = 200
+MAX_VALUE = 10
 FPS = 20
 SAMPLE_RATE = 44100
 SAMPLE_NUMBER = SAMPLE_RATE/FPS
@@ -122,8 +123,10 @@ def convert_steps(array):
 
 def gather(array):
     length = len(array)
-    reshaped = np.reshape(array, (length/GATHER_SIZE, GATHER_SIZE)) 
-    average = np.average(reshaped, axis=1)
+    average = np.average(
+        np.reshape(array, (length/GATHER_SIZE, GATHER_SIZE))
+                   , axis=1)
+
     return average
 
 
@@ -132,22 +135,32 @@ def writeToTape(serial, array, maxvalue):
     data = ""
     for x in array:
         towrite = [0, 0, 0]               #rgb
-        value = int(x)
+        value = x
         if value <= maxvalue/3:
-            towrite[0] = 20
-        elif value <= 2/3.0 * maxvalue:
-            towrite[1] = 100
+            towrite[0] = value/maxvalue * 254
+        elif value <= 2/3.5 * maxvalue:
+            towrite[1] = value/maxvalue * 254
         else:
-            towrite[2] = 254
+            towrite[2] = value/maxvalue * 254
 
         for x in towrite:
-            data += chr(x/2)
+            data += chr(int(x))
 
     # write control
     serial.write(chr(0) + chr(0) + chr(255))
     serial.write(data)
     serial.flushInput()
     serial.flush()
+
+def cleartape(serial):
+    zeros = [chr(10)] * (LED_NUMBER * 3)
+    print(zeros)
+    print("Clearing tape")
+    serial.write(zeros)
+    serial.write(chr(0) + chr(0) + chr(255))
+    serial.flushInput()
+    serial.flush()
+        
 
 def main():
     print("Starting")
@@ -158,20 +171,23 @@ def main():
     while True:
         array = np.fromiter(monitor, np.int64, SAMPLE_NUMBER)
         ffted = np.fft.fft(array)
-        
-        fftabs = np.absolute(np.log(ffted)) # i guess this ranges from 0 to 1000
-        average = gather(fftabs)
-        maxvalue = np.max(average[1:-2])
-#        modified_average = np.clip(np.round(average,ROUND_DECIMAL), 0, MAX_VALUE)[1:-2]
-        modified_average = np.clip(np.round(average,ROUND_DECIMAL), 0, 20000)[1:-2]
-        print(len(modified_average))
 
-        colored = convert_steps(modified_average)
+        #doing this in seperate arrays makes python slower
+        absolute_value = np.absolute(
+            np.clip(
+                np.log(ffted), 0, 254))
+        print(len(absolute_value))
+            
+#            logarithm = np.log(ffted)
+#            clamped = np.clip(logarithm, 0, 254)
+#            absolute_value = np.absolute(clamped)
+        average = gather(absolute_value)
+        colored = convert_steps(average)
 
         print(average)
-        writeToTape(tape, colored, 4)
-  
-    
+        writeToTape(tape, colored, 5)
+
+            
 if __name__ == '__main__':
     main()
 
