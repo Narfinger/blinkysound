@@ -4,7 +4,6 @@ from Queue import Queue
 from ctypes import POINTER, c_ubyte, c_void_p, c_ulong, cast
 from pulseaudio.lib_pulseaudio import *
 import serial
-import signal
 
 # edit to match your sink
 SINK_NAME = 'alsa_output.pci-0000_05_04.0.analog-stereo'
@@ -18,6 +17,7 @@ SAMPLE_NUMBER = SAMPLE_RATE/FPS
 GATHER_SIZE = 35
 ROUND_DECIMAL = 2
 STEP_FREQUENCY = 600.0/254
+CONTROL = chr(0) + chr(0) + chr(255)
 
 
 class AudioInterface(object):
@@ -80,14 +80,14 @@ class AudioInterface(object):
             # Found the sink we want to monitor for peak levels.
             # Tell PA to call stream_read_cb with peak samples.
             print
-            print 'setting up peak recording using', sink_info.monitor_source_name
+            print 'setting up recording using', sink_info.monitor_source_name
             print
             samplespec = pa_sample_spec()
             samplespec.channels = 1
             samplespec.format = PA_SAMPLE_U8
             samplespec.rate = self.rate
 
-            pa_stream = pa_stream_new(context, "peak detect demo", samplespec, None)
+            pa_stream = pa_stream_new(context, "blinkysound", samplespec, None)
             pa_stream_set_read_callback(pa_stream,
                                         self._stream_read_cb,
                                         sink_info.index)
@@ -104,7 +104,8 @@ class AudioInterface(object):
             # When PA_SAMPLE_U8 is used, samples values range from 128
             # to 255 because the underlying audio data is signed but
             # it doesn't make sense to return signed peaks.
-            self._samples.put(data[i] - 128)
+            #            self._samples.put(data[i] - 128)
+            self._samples.put(data[i])
         pa_stream_drop(stream)
         
 
@@ -136,6 +137,10 @@ def writeToTape(serial, array, maxvalue):
     for x in array:
         towrite = [0, 0, 0]               #rgb
         value = x
+        # value = x * 254/100
+        # towrite[0] = max(value/3, value)
+        # towrite[1] = max(value*2/3, value)
+        # towrite[2] = max(value, value)
         if value <= maxvalue/3:
             towrite[0] = value/maxvalue * 254
         elif value <= 2/3.5 * maxvalue:
@@ -147,20 +152,23 @@ def writeToTape(serial, array, maxvalue):
             data += chr(int(x))
 
     # write control
-    serial.write(chr(0) + chr(0) + chr(255))
     serial.write(data)
+    serial.write(CONTROL)
     serial.flushInput()
     serial.flush()
 
+
 def cleartape(serial):
-    zeros = [chr(10)] * (LED_NUMBER * 3)
+    zeros = [0, 0, 0] * (LED_NUMBER )
+    print(len(zeros)/3)
     print(zeros)
     print("Clearing tape")
-    serial.write(zeros)
-    serial.write(chr(0) + chr(0) + chr(255))
-    serial.flushInput()
-    serial.flush()
-        
+    data = ""
+    for x in zeros:
+        data += chr(x)
+    serial.write(data)
+    serial.write(CONTROL)
+    sys.exit(0)
 
 def main():
     print("Starting")
@@ -169,24 +177,25 @@ def main():
     tape = serial.Serial(SERIAL_PORT, 115200)
 
     while True:
-        array = np.fromiter(monitor, np.int64, SAMPLE_NUMBER)
-        ffted = np.fft.fft(array)
+        try:
+            array = np.fromiter(monitor, np.int64, SAMPLE_NUMBER)
+            ffted = np.fft.fft(array)
 
-        #doing this in seperate arrays makes python slower
-        absolute_value = np.absolute(
-            np.clip(
-                np.log(ffted), 0, 254))
-        print(len(absolute_value))
+            #doing this in seperate arrays makes python slower
+            absolute_value = np.absolute(
+                np.clip(
+                    np.log(ffted), 0, 254))
             
-#            logarithm = np.log(ffted)
-#            clamped = np.clip(logarithm, 0, 254)
-#            absolute_value = np.absolute(clamped)
-        average = gather(absolute_value)
-        colored = convert_steps(average)
+            #            logarithm = np.log(ffted)
+            #            clamped = np.clip(logarithm, 0, 254)
+            #            absolute_value = np.absolute(clamped)
+            average = gather(absolute_value)
+            colored = convert_steps(average)
 
-        print(average)
-        writeToTape(tape, colored, 5)
-
+            print(average)
+            writeToTape(tape, colored, 8)
+        except KeyboardInterrupt:
+            cleartape(tape)
             
 if __name__ == '__main__':
     main()
