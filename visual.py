@@ -9,13 +9,17 @@ import serial
 SINK_NAME = 'alsa_output.pci-0000_05_04.0.analog-stereo'
 SERIAL_PORT = '/dev/ttyACM0'
 LED_NUMBER = 60
-
 MAX_VALUE = 10
 FPS = 20
 SAMPLE_RATE = 44100
+
+
+#precompute some constants we need
 SAMPLE_NUMBER = SAMPLE_RATE/FPS
-GATHER_SIZE = 35
+PADDING_MOD = LED_NUMBER - (SAMPLE_NUMBER % LED_NUMBER)
+PADDING_NUMBER = (PADDING_MOD / 2, PADDING_MOD / 2 + PADDING_MOD % 2)
 ROUND_DECIMAL = 2
+GATHER_SIZE = (SAMPLE_NUMBER + PADDING_MOD) / LED_NUMBER
 STEP_FREQUENCY = 600.0/254
 CONTROL = chr(0) + chr(0) + chr(255)
 
@@ -123,9 +127,11 @@ def convert_steps(array):
     return it.operands[1]
 
 def gather(array):
-    length = len(array)
+    padded = np.lib.pad(array, PADDING_NUMBER, 'edge')
+
+    
     average = np.average(
-        np.reshape(array, (length/GATHER_SIZE, GATHER_SIZE))
+        np.reshape(padded, (LED_NUMBER, GATHER_SIZE))
                    , axis=1)
 
     return average
@@ -160,8 +166,6 @@ def writeToTape(serial, array, maxvalue):
 
 def cleartape(serial):
     zeros = [0, 0, 0] * (LED_NUMBER )
-    print(len(zeros)/3)
-    print(zeros)
     print("Clearing tape")
     data = ""
     for x in zeros:
@@ -191,7 +195,7 @@ def main():
             #            absolute_value = np.absolute(clamped)
             average = gather(absolute_value)
             colored = convert_steps(average)
-
+            print(len(average))
             print(average)
             writeToTape(tape, colored, 8)
         except KeyboardInterrupt:
