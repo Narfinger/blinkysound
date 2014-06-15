@@ -129,7 +129,6 @@ def convert_steps(array):
 def gather(array):
     padded = np.lib.pad(array, PADDING_NUMBER, 'edge')
 
-    
     average = np.average(
         np.reshape(padded, (LED_NUMBER, GATHER_SIZE))
                    , axis=1)
@@ -142,17 +141,15 @@ def writeToTape(serial, array, maxvalue):
     data = ""
     for x in array:
         towrite = [0, 0, 0]               #rgb
-        value = x
-        # value = x * 254/100
-        # towrite[0] = max(value/3, value)
-        # towrite[1] = max(value*2/3, value)
-        # towrite[2] = max(value, value)
-        if value <= maxvalue/3:
-            towrite[0] = value/maxvalue * 254
-        elif value <= 2/3.5 * maxvalue:
-            towrite[1] = value/maxvalue * 254
-        else:
-            towrite[2] = value/maxvalue * 254
+        
+        towrite[1] = x * 2
+        # value = x
+        # if value <= maxvalue/3:
+        #     towrite[0] = value/maxvalue * 254
+        # elif value <= 2/3.5 * maxvalue:
+        #     towrite[1] = value/maxvalue * 254
+        # else:
+        #     towrite[2] = value/maxvalue * 254
 
         for x in towrite:
             data += chr(int(x))
@@ -178,26 +175,32 @@ def main():
     print("Starting")
     monitor = AudioInterface(SINK_NAME, SAMPLE_RATE)
     print "done setup"
-    tape = serial.Serial(SERIAL_PORT, 115200)
-
+    simulate = False
+    try:
+        tape = serial.Serial(SERIAL_PORT, 115200)
+    except OSError:
+        simulate = True
+    
     while True:
         try:
-            array = np.fromiter(monitor, np.int64, SAMPLE_NUMBER)
-            ffted = np.fft.fft(array)
+            array = np.fromiter(monitor, np.int64, SAMPLE_NUMBER*2)
+            ffted = np.fft.rfft(array)[:-1]   #this is kind of hacky but i don't know why it gives me +1
 
             #doing this in seperate arrays makes python slower
-            absolute_value = np.absolute(
-                np.clip(
-                    np.log(ffted), 0, 254))
+            power = np.abs(ffted) ** 2
+            value = np.log10(
+                np.abs(ffted) ** 2)
+
             
-            #            logarithm = np.log(ffted)
-            #            clamped = np.clip(logarithm, 0, 254)
-            #            absolute_value = np.absolute(clamped)
-            average = gather(absolute_value)
+            average = gather(value)
             colored = convert_steps(average)
-            print(len(average))
             print(average)
-            writeToTape(tape, colored, 8)
+            if not simulate:
+                try:
+                    writeToTape(tape, colored, 8)
+                except SerialException:
+                    pass
+                
         except KeyboardInterrupt:
             cleartape(tape)
             
