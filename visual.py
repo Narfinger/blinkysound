@@ -20,7 +20,7 @@ PADDING_MOD = LED_NUMBER - (SAMPLE_NUMBER % LED_NUMBER)
 PADDING_NUMBER = (PADDING_MOD / 2, PADDING_MOD / 2 + PADDING_MOD % 2)
 ROUND_DECIMAL = 2
 GATHER_SIZE = (SAMPLE_NUMBER + PADDING_MOD) / LED_NUMBER
-STEP_FREQUENCY = 600.0/254
+STEPS = 2*2/254.0
 CONTROL = chr(0) + chr(0) + chr(255)
 
 
@@ -123,7 +123,8 @@ def convert_steps(array):
                                ['writeonly', 'allocate', 'no_broadcast']])
     for x,y in it:
         # simple use 255 value between red and blue
-        y[...] =  np.round(x / STEP_FREQUENCY).astype(int)
+        
+        y[...] =  np.round(x / STEPS).astype(int)
     return it.operands[1]
 
 def gather(array):
@@ -138,19 +139,15 @@ def gather(array):
 
 def writeToTape(serial, array, maxvalue):
     print("Writing")
+    print(array)
     data = ""
     for x in array:
         towrite = [0, 0, 0]               #rgb
+        towrite[0] = 18
+        towrite[1] = min(max(0,x - 20),254)
+        towrite[2] = min(max(0,x - towrite[1]),254)
         
-        towrite[1] = x * 2
-        # value = x
-        # if value <= maxvalue/3:
-        #     towrite[0] = value/maxvalue * 254
-        # elif value <= 2/3.5 * maxvalue:
-        #     towrite[1] = value/maxvalue * 254
-        # else:
-        #     towrite[2] = value/maxvalue * 254
-
+        #towrite[1] = x * 2
         for x in towrite:
             data += chr(int(x))
 
@@ -194,7 +191,7 @@ def main():
             
             average = gather(value)
             colored = convert_steps(average)
-            print(average)
+            #print(average)
             if not simulate:
                 try:
                     writeToTape(tape, colored, 8)
