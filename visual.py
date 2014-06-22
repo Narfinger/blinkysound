@@ -4,6 +4,7 @@ from Queue import Queue
 from ctypes import POINTER, c_ubyte, c_void_p, c_ulong, cast
 from pulseaudio.lib_pulseaudio import *
 import serial
+from serial import SerialException
 
 # edit to match your sink
 SINK_NAME = 'alsa_output.pci-0000_05_04.0.analog-stereo'
@@ -20,7 +21,6 @@ PADDING_MOD = LED_NUMBER - (SAMPLE_NUMBER % LED_NUMBER)
 PADDING_NUMBER = (PADDING_MOD / 2, PADDING_MOD / 2 + PADDING_MOD % 2)
 ROUND_DECIMAL = 2
 GATHER_SIZE = (SAMPLE_NUMBER + PADDING_MOD) / LED_NUMBER
-STEPS = 2*2/254.0
 CONTROL = chr(0) + chr(0) + chr(255)
 
 
@@ -117,6 +117,9 @@ class AudioInterface(object):
 
 
 def convert_steps(array):
+    maxvalue = np.max(array)
+    steps = maxvalue/(254.0)
+    
     it = np.nditer([array, None],
                    flags = ['external_loop', 'buffered'],
                    op_flags = [['readonly'],
@@ -124,7 +127,7 @@ def convert_steps(array):
     for x,y in it:
         # simple use 255 value between red and blue
         
-        y[...] =  np.round(x / STEPS).astype(int)
+        y[...] =  np.round(x / steps).astype(int)
     return it.operands[1]
 
 def gather(array):
@@ -143,13 +146,13 @@ def writeToTape(serial, array, maxvalue):
     data = ""
     for x in array:
         towrite = [0, 0, 0]               #rgb
-        towrite[0] = 18
-        towrite[1] = min(max(0,x - 20),254)
-        towrite[2] = min(max(0,x - towrite[1]),254)
-        
-        #towrite[1] = x * 2
+        towrite[0] = x
+        towrite[1] = 20
+        towrite[2] = 254- x
+                
         for x in towrite:
-            data += chr(int(x))
+            capped = int(min(254,max(0,x)))
+            data += chr(capped)
 
     # write control
     serial.write(data)
