@@ -144,15 +144,19 @@ def writeToTape(serial, array, maxvalue):
     print("Writing")
     print(array)
     data = ""
-    for x in array:
-        towrite = [0, 0, 0]               #rgb
-        towrite[0] = x
-        towrite[1] = 20
-        towrite[2] = 254- x
+    if array[0] > 1e1:
+        for x in array:
+            towrite = [0, 0, 0]               #rgb
+            towrite[0] = x
+            towrite[1] = 60
+            towrite[2] = 254 - x
                 
-        for x in towrite:
-            capped = int(min(254,max(0,x)))
-            data += chr(capped)
+            for x in towrite:
+                capped = int(min(254,max(0,x)))
+                data += chr(capped)
+    else:
+#        cleartape(serial)
+        return
 
     # write control
     serial.write(data)
@@ -169,7 +173,6 @@ def cleartape(serial):
         data += chr(x)
     serial.write(data)
     serial.write(CONTROL)
-    sys.exit(0)
 
 def main():
     print("Starting")
@@ -184,14 +187,14 @@ def main():
     while True:
         try:
             array = np.fromiter(monitor, np.int64, SAMPLE_NUMBER*2)
-            ffted = np.fft.rfft(array)[:-1]   #this is kind of hacky but i don't know why it gives me +1
+            ffted = np.fft.rfft(array)[1:]   #this is kind of hacky but i don't know why it gives me +1
 
             #doing this in seperate arrays makes python slower
-            power = np.abs(ffted) ** 2
-            value = np.log10(
-                np.abs(ffted) ** 2)
+#            power = np.abs(ffted) ** 2
+            value = np.abs(
+                np.log10(
+                    ffted ** 2))
 
-            
             average = gather(value)
             colored = convert_steps(average)
             #print(average)
@@ -203,6 +206,7 @@ def main():
                 
         except KeyboardInterrupt:
             cleartape(tape)
+            sys.exit()
             
 if __name__ == '__main__':
     main()
