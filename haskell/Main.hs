@@ -5,7 +5,7 @@ import Numeric.FFT.Vector.Unitary
 import qualified Data.Vector as V
 import System.Hardware.Serialport
 
-import Control.Monad (forever)
+import Control.Monad (replicateM_)
 import Data.Ratio
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Char8 as BC
@@ -13,7 +13,7 @@ import Control.Monad.Trans  (liftIO)
 import Data.Complex
 import Data.Word
 
-serialport = "/dev/ttyACM0"
+serialport = "/dev/ttyACM3"
 fps = 10
 sample_freq = 44100
 samples = sample_freq `quot` fromIntegral fps
@@ -79,18 +79,20 @@ writeToSerial port leds = do
   flush port;
      
 
+runBlink :: Simple -> SerialPort -> IO ()
+runBlink sound port = do
+  xs <- simpleRead sound $ samples :: IO [Double];
+  -- putStrLn $ show $ length xs;
+  let colors = processSamples xs;
+  let bstring = packLeds colors;
+  writeToSerial port bstring;
+
 main :: IO ()
 main = do
   s <- simpleNew Nothing "blinkysound" Record Nothing "this is blinkysound"
        (SampleSpec (F32 LittleEndian) 44100 1) Nothing Nothing;
   port <- openSerial serialport defaultSerialSettings { commSpeed = CS115200 }
-  forever $ do
-    xs <- simpleRead s $ samples :: IO [Double];
-    putStrLn $ show $ length xs;
-    let colors = processSamples xs;
-    let bstring = packLeds colors;
-    writeToSerial port bstring;
-  -- putStrLn $ show bla
---  putStrLn $ show bla
+  replicateM_ 10 (runBlink s port)
   closeSerial port
   simpleFree s
+  putStrLn "Shutting down"
