@@ -5,6 +5,7 @@ import Numeric.FFT.Vector.Unitary
 import qualified Data.Vector as V
 import System.Hardware.Serialport
 
+import Control.Monad (forever)
 import Data.Ratio
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Char8 as BC
@@ -82,12 +83,13 @@ main :: IO ()
 main = do
   s <- simpleNew Nothing "blinkysound" Record Nothing "this is blinkysound"
        (SampleSpec (F32 LittleEndian) 44100 1) Nothing Nothing;
-  xs <- simpleRead s $ samples :: IO [Double];
-  putStrLn $ show $ length xs;
-  let colors = processSamples xs;
-  let bstring = packLeds colors;
   port <- openSerial serialport defaultSerialSettings { commSpeed = CS115200 }
-  writeToSerial port bstring;
+  forever $ do
+    xs <- simpleRead s $ samples :: IO [Double];
+    putStrLn $ show $ length xs;
+    let colors = processSamples xs;
+    let bstring = packLeds colors;
+    writeToSerial port bstring;
   -- putStrLn $ show bla
 --  putStrLn $ show bla
   closeSerial port
