@@ -1,9 +1,11 @@
+module Main where
+
 import Sound.Pulse.Simple
 import Numeric.FFT.Vector.Unitary
 import qualified Data.Vector as V
 import System.Hardware.Serialport
 
-
+import Data.Ratio
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Char8 as BC
 import Control.Monad.Trans  (liftIO)
@@ -13,8 +15,9 @@ import Data.Word
 serialport = "/dev/ttyACM0"
 fps = 10
 sample_freq = 44100
-samples = round $ sample_freq / fps
+samples = sample_freq `quot` fromIntegral fps
 leds = 60
+gather_size = samples `quot` leds
 
 
 
@@ -23,22 +26,31 @@ data Led = Led { red    :: Word8
                , blue   :: Word8
                } deriving (Show)
 
+createLed :: Double -> Led
+createLed d = Led { red = 20, green = 120, blue = 0 }
+
 finished_signal = Led { red = 0, green = 0, blue = 255}
 
 collect :: Int -> b -> ([b],[[b]]) -> ([b],[[b]])
 collect n x (cur, list) =
-  if n == length cur  then ([x], cur : list)
+  if n-1 == length cur then ([], (x: cur) : list)
   else (x:cur, list)
 
+-- |Gathers n elements and discards the first few elements that are not even divided| --
 gathern :: Int -> [a] -> [[a]]
 gathern num list =
-  let (head, tail) = foldr (collect num) ([],[[]]) list in
+  let (_, tail) = foldr (collect num) ([],[]) list in
   tail
   
-gather3 :: [a] -> [[a]]
-gather3 = gathern 3
+-- | Computes the average over a list| --
+avg :: [Double] -> Double
+avg list =
+  let n = fromIntegral $ length list
+      avg = foldr1 (+) list in
+   avg / n
 
-          -- does not quite work yet because we get differtent thing
+avgList :: [[Double]] -> [Double]
+avgList list = map avg list
 
 doFFT :: [Double] -> V.Vector (Complex Double)
 doFFT list =
@@ -48,9 +60,10 @@ doFFT list =
 
 processSamples :: [Double] -> [Led]
 processSamples list =
-  let transformed = doFFT list in
-  [Led {red = 0, green = 120, blue =0} | x<-[1..leds]]
-
+  let transformed = gathern gather_size $ V.toList $ doFFT list
+      doubles = (map . map) (magnitude . abs) transformed
+      avgs = avgList doubles in
+   map createLed avgs
 
 packLeds :: [Led] -> B.ByteString
 packLeds list = B.pack $ concat $ map (\l -> [red l, green l, blue l]) list
