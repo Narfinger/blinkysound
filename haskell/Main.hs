@@ -1,8 +1,10 @@
 module Main where
 
 import Sound.Pulse.Simple
-import Numeric.FFT.Vector.Unitary
-import qualified Data.Vector as V
+--import Math.FFT
+--import CArray
+--import Numeric.FFT.Vector.Unitary
+import Numeric.FFT
 import System.Hardware.Serialport
 
 import Control.Monad (replicateM_)
@@ -13,7 +15,7 @@ import Control.Monad.Trans  (liftIO)
 import Data.Complex
 import Data.Word
 
-serialport = "/dev/ttyACM3"
+serialport = "/dev/ttyACM1"
 fps = 10
 sample_freq = 44100
 samples = sample_freq `quot` fromIntegral fps
@@ -53,15 +55,16 @@ avg list =
 avgList :: [[Double]] -> [Double]
 avgList list = map avg list
 
-doFFT :: [Double] -> V.Vector (Complex Double)
-doFFT list =
-  let vector = V.fromList list
-      cvector = V.map (\x -> mkPolar x 1) vector in
-  run dft cvector
+doFFT :: [Double] -> [Complex Double] 
+doFFT list = dft (map (\x -> mkPolar x 1)  list)
+  
+  -- let vector = V.fromList list
+  --     cvector = V.map (\x -> mkPolar x 1) vector in
+  -- run dft cvector
 
 processSamples :: [Double] -> [Led]
 processSamples list =
-  let transformed = gathern gather_size $ V.toList $ doFFT list
+  let transformed = gathern gather_size $ doFFT list
       doubles = (map . map) (magnitude . abs) transformed
       avgs = avgList doubles in
    map createLed avgs
@@ -77,7 +80,7 @@ writeToSerial port leds = do
   send port leds;
   send port finisheds;
   flush port;
-     
+  return ()   
 
 runBlink :: Simple -> SerialPort -> IO ()
 runBlink sound port = do
@@ -87,12 +90,26 @@ runBlink sound port = do
   let bstring = packLeds colors;
   writeToSerial port bstring;
 
+
+simpletestpattern :: SerialPort -> IO ()
+simpletestpattern port = do
+  mapM_ (testpattern port) [1..255]
+
+testpattern :: SerialPort -> Word8 -> IO ()
+testpattern port j = do
+  let baselist = concat $ map (replicate 20) [j..]
+  let leds = take 60 $ [ Led i (i+25 `mod` 255) (i+50 `mod` 255)  | i <- baselist]
+  let bstring = packLeds leds
+  writeToSerial port bstring 
+
+
 main :: IO ()
 main = do
-  s <- simpleNew Nothing "blinkysound" Record Nothing "this is blinkysound"
-       (SampleSpec (F32 LittleEndian) 44100 1) Nothing Nothing;
+  -- s <- simpleNew Nothing "blinkysound" Record Nothing "this is blinkysound"
+  --      (SampleSpec (F32 LittleEndian) 44100 1) Nothing Nothing;
   port <- openSerial serialport defaultSerialSettings { commSpeed = CS115200 }
-  replicateM_ 10 (runBlink s port)
+  simpletestpattern port
+  -- replicateM_ 10 (runBlink s port)
   closeSerial port
-  simpleFree s
+  -- simpleFree s
   putStrLn "Shutting down"
