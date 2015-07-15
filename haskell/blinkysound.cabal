@@ -27,7 +27,10 @@ executable blinkysound
                      , serialport >= 0.4.5
                      , pure-fft >= 0.2.0
                      , deepseq >= 1.4.1.1
-  --                   , fft >= 0.1.8.1
+                     , array >= 0.5.1
+                     , fft >= 0.1.8.1
+                     , vector >= 0.10.12.3
+--                     , storablevector >= 0.2.10
 --                     , carray >= 0.1.5.2
                      --, vector >= 0.5
   -- hs-source-dirs:      

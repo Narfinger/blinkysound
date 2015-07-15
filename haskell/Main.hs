@@ -1,10 +1,12 @@
 module Main where
 
 import Sound.Pulse.Simple
---import Math.FFT
+import Math.FFT
+--import qualified Data.Vector as V
+import qualified Data.Vector.Storable as V
 --import CArray
 --import Numeric.FFT.Vector.Unitary
-import Numeric.FFT
+--import Numeric.FFT
 import System.Hardware.Serialport
 
 import Control.Monad (replicateM_)
@@ -61,8 +63,11 @@ avg list =
 avgList :: [[Double]] -> [Double]
 avgList list = map avg list
 
-doFFT :: [Double] -> [Complex Double] 
-doFFT list = dft (map (\x -> mkPolar x 1)  list)
+doFFT :: [Double] -> V.Vector (Complex Double) 
+doFFT list =
+  let array = V.fromList list in
+  let tocomp = map (\x -> mkPolar x 1) array in
+  dft (V.unsafeToForeignPtr array)
   
   -- let vector = V.fromList list
   --     cvector = V.map (\x -> mkPolar x 1) vector in
