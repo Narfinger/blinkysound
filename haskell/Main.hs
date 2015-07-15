@@ -15,7 +15,10 @@ import Control.Monad.Trans  (liftIO)
 import Data.Complex
 import Data.Word
 
-serialport = "/dev/ttyACM1"
+
+import Control.DeepSeq
+
+serialport = "/dev/ttyACM0"
 fps = 10
 sample_freq = 44100
 samples = sample_freq `quot` fromIntegral fps
@@ -30,7 +33,10 @@ data Led = Led { red    :: Word8
                } deriving (Show)
 
 createLed :: Double -> Led
-createLed d = Led { red = 20, green = 120, blue = 0 }
+createLed d =
+  let vv = d * 10000000000 in
+  let v = (min 254 (fromIntegral $ round vv)) ::Word8 in
+  v `deepseq` Led { red = 120, green = 40, blue = 0 }
 
 finished_signal = Led { red = 0, green = 0, blue = 255}
 
@@ -102,14 +108,28 @@ testpattern port j = do
   let bstring = packLeds leds
   writeToSerial port bstring 
 
+disableLed :: SerialPort  -> IO ()
+disableLed port = do
+  let leds = take 60 $ repeat (Led 0 0 0)
+  let bstring = packLeds leds
+  writeToSerial port bstring
 
-main :: IO ()
-main = do
-  -- s <- simpleNew Nothing "blinkysound" Record Nothing "this is blinkysound"
-  --      (SampleSpec (F32 LittleEndian) 44100 1) Nothing Nothing;
+
+testrun :: IO ()
+testrun = do
   port <- openSerial serialport defaultSerialSettings { commSpeed = CS115200 }
   simpletestpattern port
-  -- replicateM_ 10 (runBlink s port)
+  disableLed port
+  closeSerial port
+  putStrLn "Shutting down"
+  
+main :: IO ()
+main = do
+  s <- simpleNew Nothing "blinkysound" Record Nothing "this is blinkysound"
+       (SampleSpec (F32 LittleEndian) 44100 1) Nothing Nothing;
+  port <- openSerial serialport defaultSerialSettings { commSpeed = CS115200 }
+  replicateM_ 10 (runBlink s port)
+  disableLed port
   closeSerial port
   -- simpleFree s
   putStrLn "Shutting down"
